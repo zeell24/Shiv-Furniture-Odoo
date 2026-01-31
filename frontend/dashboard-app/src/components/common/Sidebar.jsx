@@ -12,6 +12,9 @@ export default function Sidebar() {
       <Link style={linkStyle} to="/budgets">Budgets</Link>
       <Link style={linkStyle} to="/transactions">Transactions</Link>
       <Link style={linkStyle} to="/reports">Reports</Link>
+      <Link style={linkStyle} to="/customer">Customer</Link>
+      <Link style={linkStyle} to="/customer/invoices">My Invoices</Link>
+      <Link style={linkStyle} to="/customer/payment">Payment</Link>
     </div>
   );
 }

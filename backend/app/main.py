@@ -1,47 +1,22 @@
-# backend/app/main.py - UPDATED WITH ALL IMPORTS
+# backend/app/main.py
 import sys
 import os
 
+# Ensure backend root is on Python path when running as script
+_backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _backend_root not in sys.path:
+    sys.path.insert(0, _backend_root)
 
-# ADD THIS: Fix Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 
-# In create_app() function, inside with app.app_context():
-try:
-    from app.api.auth import auth_bp
-    from app.api.budget import budget_bp
-    from app.api.cost_centers import cost_centers_bp
-    from app.api.transactions import transactions_bp
-    from app.api.products import products_bp
-    from app.api.invoices import invoices_bp      # ADD THIS
-    from app.api.payments import payments_bp      # ADD THIS
-    from app.api.reports import reports_bp        # ADD THIS
-    
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(budget_bp, url_prefix='/api/budgets')
-    app.register_blueprint(cost_centers_bp, url_prefix='/api/cost-centers')
-    app.register_blueprint(transactions_bp, url_prefix='/api/transactions')
-    app.register_blueprint(products_bp, url_prefix='/api/products')
-    app.register_blueprint(invoices_bp, url_prefix='/api/invoices')      # ADD THIS
-    app.register_blueprint(payments_bp, url_prefix='/api/payments')      # ADD THIS
-    app.register_blueprint(reports_bp, url_prefix='/api/reports')        # ADD THIS
-    
-    print("✅ All blueprints registered")
-    
-except ImportError as e:
-    print(f"⚠️  Blueprint import warning: {e}")
-
-# Load environment variables
 load_dotenv()
 
-# Initialize SQLAlchemy here (BEFORE importing blueprints)
-db = SQLAlchemy()
+# Use single db instance from app.database.connection (models import this)
+from app.database.connection import db
+
 
 def create_app():
     """Application factory pattern"""
@@ -56,60 +31,60 @@ def create_app():
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Initialize extensions
-    CORS(app)
+    # Initialize extensions (db is from app.database.connection)
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
     JWTManager(app)
     db.init_app(app)
     
-    # Import models FIRST (important!)
-    try:
-        from app.database import models  # This creates the tables
-        print("✅ Models imported")
-    except ImportError as e:
-        print(f"⚠️  Model import warning: {e}")
-    
-    # Now import and register blueprints - IMPORTANT: Do it INSIDE app context
+    # Import models so tables are registered
     with app.app_context():
-        try:
-            from app.api.auth import auth_bp
-            from app.api.budget import budget_bp
-            from app.api.cost_centers import cost_centers_bp
-            from app.api.transactions import transactions_bp
-            from app.api.products import products_bp
-            
-            app.register_blueprint(auth_bp, url_prefix='/api/auth')
-            app.register_blueprint(budget_bp, url_prefix='/api/budgets')
-            app.register_blueprint(cost_centers_bp, url_prefix='/api/cost-centers')
-            app.register_blueprint(transactions_bp, url_prefix='/api/transactions')
-            app.register_blueprint(products_bp, url_prefix='/api/products')
-            
-            print("✅ All blueprints registered")
-            
-        except ImportError as e:
-            print(f"⚠️  Blueprint import warning: {e}")
-            # Create simple test blueprint if imports fail
-            from flask import jsonify
-            @app.route('/api/test')
-            def test():
-                return jsonify({'message': 'API is working (some modules may not be loaded)'})
-    
-    # Create database tables
-    with app.app_context():
+        from app.database import models  # noqa: F401
         db.create_all()
-        print("✅ Database tables created")
+        print("[OK] Models and tables ready")
     
-    # Add a simple test route
+    # Register all API blueprints
+    try:
+        from app.api.auth import auth_bp
+        from app.api.budget import budget_bp
+        from app.api.cost_centers import cost_centers_bp
+        from app.api.transactions import transactions_bp
+        from app.api.products import products_bp
+        from app.api.invoices import invoices_bp
+        from app.api.payments import payments_bp
+        from app.api.reports import reports_bp
+        
+        app.register_blueprint(auth_bp, url_prefix='/api/auth')
+        app.register_blueprint(budget_bp, url_prefix='/api/budgets')
+        app.register_blueprint(cost_centers_bp, url_prefix='/api/cost-centers')
+        app.register_blueprint(transactions_bp, url_prefix='/api/transactions')
+        app.register_blueprint(products_bp, url_prefix='/api/products')
+        app.register_blueprint(invoices_bp, url_prefix='/api/invoices')
+        app.register_blueprint(payments_bp, url_prefix='/api/payments')
+        app.register_blueprint(reports_bp, url_prefix='/api/reports')
+        print("[OK] All blueprints registered")
+    except ImportError as e:
+        print("[WARN] Blueprint import warning:", e)
+    
+    # Root and health
     @app.route('/')
     def home():
-        return {
+        return jsonify({
             'message': 'Shiv Furniture Budget API',
             'status': 'Running',
             'endpoints': {
-                'test': '/api/auth/test',
+                'auth': '/api/auth/',
                 'products': '/api/products/',
-                'transactions': '/api/transactions/'
+                'transactions': '/api/transactions/',
+                'budgets': '/api/budgets/',
+                'invoices': '/api/invoices/',
+                'payments': '/api/payments/',
+                'reports': '/api/reports/'
             }
-        }
+        })
+    
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({'status': 'healthy', 'service': 'Shiv Furniture Budget API'})
     
     return app
 
