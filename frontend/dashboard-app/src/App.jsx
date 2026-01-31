@@ -10,16 +10,23 @@ import CustomerDashboard from "./pages/customer/customerdashboard.jsx";
 
 import Navbar from "./components/common/Navbar.jsx";
 import Sidebar from "./components/common/Sidebar.jsx";
+import { AuthContext } from "./context/AuthContext";
 
-export default function App() {
+function AppContent() {
+  const { loading } = React.useContext(AuthContext);
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
   return (
-    <BrowserRouter>
+    <>
       <Navbar />
-
-      <div style={{ display: "flex", minHeight: "100vh" }}>
+      <div className="flex min-h-screen bg-[#FDFCFB]">
         <Sidebar />
-
-        <div style={{ padding: 20, flex: 1 }}>
+        <main className="flex-1 overflow-y-auto px-16 py-12">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/budgets" element={<BudgetManagement />} />
@@ -29,8 +36,16 @@ export default function App() {
             <Route path="/customer/invoices" element={<MyInvoices />} />
             <Route path="/customer/payment" element={<PaymentPage />} />
           </Routes>
-        </div>
+        </main>
       </div>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
   );
 }

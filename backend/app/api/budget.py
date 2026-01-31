@@ -2,11 +2,52 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.database.connection import db
-from app.database.models import Budget, CostCenter, Transaction
+from app.database.models import Budget, CostCenter, Transaction, MasterBudget
 from datetime import datetime, date
 from sqlalchemy import and_
 
 budget_bp = Blueprint('budget', __name__)
+
+
+@budget_bp.route('/master', methods=['GET'])
+@jwt_required()
+def get_master_budget():
+    """Get organization-wide master budget"""
+    try:
+        mb = MasterBudget.query.first()
+        if not mb:
+            mb = MasterBudget(amount=1500000)
+            db.session.add(mb)
+            db.session.commit()
+        return jsonify({'amount': mb.amount, 'updated_at': mb.updated_at.isoformat() if mb.updated_at else None}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@budget_bp.route('/master', methods=['PUT'])
+@jwt_required()
+def update_master_budget():
+    """Update master budget (admin revision)"""
+    try:
+        data = request.get_json()
+        if 'amount' not in data:
+            return jsonify({'error': 'amount is required'}), 400
+        amount = float(data['amount'])
+        if amount < 0:
+            return jsonify({'error': 'amount must be positive'}), 400
+
+        mb = MasterBudget.query.first()
+        if not mb:
+            mb = MasterBudget(amount=amount)
+            db.session.add(mb)
+        else:
+            mb.amount = amount
+        db.session.commit()
+        return jsonify({'message': 'Master budget updated', 'amount': mb.amount}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 # Helper function for budget calculations
 def calculate_budget_utilization(budget):

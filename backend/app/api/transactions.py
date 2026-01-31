@@ -84,6 +84,11 @@ def create_transaction():
         # Parse date
         transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
         
+        # Normalize status
+        status = data.get('status', 'paid')
+        if status not in ('paid', 'not_paid', 'partially_paid'):
+            status = 'paid'
+
         # Create transaction
         new_transaction = Transaction(
             type=data['type'],
@@ -92,7 +97,8 @@ def create_transaction():
             product_id=data.get('product_id'),
             quantity=data.get('quantity', 1),
             description=data.get('description', ''),
-            transaction_date=transaction_date
+            transaction_date=transaction_date,
+            status=status
         )
         
         db.session.add(new_transaction)
@@ -146,6 +152,9 @@ def update_transaction(transaction_id):
         
         if 'transaction_date' in data:
             transaction.transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
+        
+        if 'status' in data and data['status'] in ('paid', 'not_paid', 'partially_paid'):
+            transaction.status = data['status']
         
         db.session.commit()
         

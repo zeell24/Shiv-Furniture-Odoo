@@ -105,3 +105,30 @@ def get_current_user():
 def logout():
     """Logout user (client should discard token)"""
     return jsonify({'message': 'Logout successful'}), 200
+
+
+@auth_bp.route('/demo', methods=['POST'])
+def demo_login():
+    """Demo login - creates admin user if not exists, returns JWT for quick dev access"""
+    try:
+        admin = User.query.filter_by(email='admin@shivfurniture.com').first()
+        if not admin:
+            admin = User(email='admin@shivfurniture.com', role='admin')
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+        if not admin.check_password('admin123'):
+            admin.set_password('admin123')
+            db.session.commit()
+        token = create_access_token(
+            identity={'id': admin.id, 'email': admin.email, 'role': admin.role},
+            expires_delta=timedelta(hours=24)
+        )
+        return jsonify({
+            'message': 'Demo login successful',
+            'access_token': token,
+            'user': {'id': admin.id, 'email': admin.email, 'role': admin.role}
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

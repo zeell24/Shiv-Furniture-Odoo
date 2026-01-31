@@ -5,8 +5,51 @@ from app.database.connection import db
 from app.database.models import Budget, Transaction, Invoice, Payment, CostCenter
 from datetime import datetime, timedelta
 from sqlalchemy import func, extract
+from collections import defaultdict
 
 reports_bp = Blueprint('reports', __name__)
+
+
+@reports_bp.route('/chart-data', methods=['GET'])
+@jwt_required()
+def chart_data():
+    """Expense/transaction data for charts - grouped by month. Empty when no data."""
+    try:
+        transactions = Transaction.query.order_by(Transaction.transaction_date.asc()).all()
+        if not transactions:
+            return jsonify({
+                'labels': [],
+                'datasets': [],
+                'has_data': False,
+                'message': 'No transaction data yet. Add transactions to see the chart.'
+            }), 200
+
+        # Group by month
+        by_month = defaultdict(lambda: {'purchase': 0, 'sale': 0, 'total': 0})
+        months_seen = set()
+        for t in transactions:
+            month_key = t.transaction_date.strftime('%Y-%m') if t.transaction_date else 'Unknown'
+            months_seen.add(month_key)
+            by_month[month_key][t.type] += t.amount
+            by_month[month_key]['total'] += t.amount
+
+        labels = sorted(months_seen)
+        purchase_data = [by_month[m]['purchase'] for m in labels]
+        sale_data = [by_month[m]['sale'] for m in labels]
+        total_data = [by_month[m]['total'] for m in labels]
+
+        return jsonify({
+            'labels': labels,
+            'datasets': [
+                {'label': 'Purchases', 'data': purchase_data, 'backgroundColor': '#ef4444'},
+                {'label': 'Sales', 'data': sale_data, 'backgroundColor': '#22c55e'},
+                {'label': 'Total', 'data': total_data, 'backgroundColor': '#3b82f6'}
+            ],
+            'has_data': True,
+            'transactions': [t.to_dict() for t in transactions]
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @reports_bp.route('/budget-vs-actual', methods=['GET'])
 @jwt_required()

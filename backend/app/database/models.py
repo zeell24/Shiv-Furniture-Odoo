@@ -102,6 +102,15 @@ class Budget(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class MasterBudget(db.Model):
+    """Organization-wide master budget (single row)"""
+    __tablename__ = 'master_budget'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    amount = db.Column(db.Float, nullable=False, default=1500000)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Transaction(db.Model):
     """Purchase/Sales transactions"""
     __tablename__ = 'transactions'
@@ -109,6 +118,7 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     type = db.Column(db.String(20), nullable=False)  # 'purchase' or 'sale'
     amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default='paid')  # 'paid', 'not_paid', 'partially_paid'
     cost_center_id = db.Column(db.Integer, db.ForeignKey('cost_centers.id'), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'))
     quantity = db.Column(db.Integer, default=1)
@@ -121,6 +131,7 @@ class Transaction(db.Model):
             'id': self.id,
             'type': self.type,
             'amount': self.amount,
+            'status': self.status or 'paid',
             'cost_center_id': self.cost_center_id,
             'cost_center_name': self.cost_center.name if self.cost_center else None,
             'product_id': self.product_id,

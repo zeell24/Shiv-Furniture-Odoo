@@ -1,12 +1,8 @@
 export default function Navbar() {
   return (
-    <div style={{
-      background: "#1f2937",
-      color: "white",
-      padding: "15px 20px",
-      fontSize: 18
-    }}>
-      Admin Dashboard
+    <div className="bg-[#0F0F0F] text-white px-8 py-4 flex items-center gap-4 border-b border-zinc-800">
+      <span className="font-black text-lg tracking-tight">SHIV FURNITURE</span>
+      <span className="text-zinc-500 text-sm">Heritage ERP</span>
     </div>
   );
 }

@@ -1,21 +1,25 @@
-/**
- * Auto-Analytical Model Rule Engine
- * Categorizes expenses based on keywords in product names or descriptions.
- */
+import React from 'react';
+import { Package, Target, Truck, Zap } from 'lucide-react';
+
 const ANALYTICAL_RULES = [
-  { keywords: ['wood', 'timber', 'plywood'], account: 'Production' },
-  { keywords: ['expo', 'fair', 'advertisement', 'social media'], account: 'Marketing' },
-  { keywords: ['delivery', 'fuel', 'truck'], account: 'Logistics' },
-  { keywords: ['office', 'stationary', 'rent'], account: 'Administrative' }
+  { keywords: ['wood', 'timber', 'plywood', 'teak', 'oak'], account: 'Production', icon: Package },
+  { keywords: ['expo', 'fair', 'advertisement', 'social', 'marketing'], account: 'Marketing', icon: Target },
+  { keywords: ['delivery', 'fuel', 'truck', 'shipping', 'freight'], account: 'Logistics', icon: Truck },
+  { keywords: ['office', 'stationary', 'rent', 'electricity'], account: 'Administrative', icon: Zap },
 ];
 
 export function getAnalyticalAccount(productName) {
-  if (!productName) return 'General';
-  const normalizedInput = String(productName).toLowerCase();
-  for (const rule of ANALYTICAL_RULES) {
-    if (rule.keywords.some((keyword) => normalizedInput.includes(keyword))) {
-      return rule.account;
-    }
+  if (!productName) return { name: 'General', icon: Zap };
+  const input = String(productName).toLowerCase();
+  const match = ANALYTICAL_RULES.find((rule) =>
+    rule.keywords.some((keyword) => input.includes(keyword))
+  );
+  if (match) {
+    return { name: match.account, icon: match.icon };
   }
-  return 'Uncategorized';
+  return { name: 'Furniture Expo 2026', icon: Target };
+}
+
+export function getAccountName(productName) {
+  return getAnalyticalAccount(productName).name;
 }
