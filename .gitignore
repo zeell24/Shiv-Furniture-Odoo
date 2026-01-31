@@ -3,3 +3,5 @@
 "*.pyc" 
 "backend/venv/" 
 "venv/" 
+"backend/venv/" 
+"venv/" 
