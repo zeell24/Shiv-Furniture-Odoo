@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Dashboard from "./pages/admin/Dashboard.jsx";
@@ -13,7 +14,7 @@ import Sidebar from "./components/common/Sidebar.jsx";
 import { AuthContext } from "./context/AuthContext";
 
 function AppContent() {
-  const { loading } = React.useContext(AuthContext);
+  const { loading } = useContext(AuthContext);
   if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
