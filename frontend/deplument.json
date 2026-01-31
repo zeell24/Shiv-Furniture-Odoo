@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "name": "shiv-furniture-portal",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build"
+    }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
