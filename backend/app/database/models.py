@@ -16,12 +16,22 @@ def _id_str(doc):
 
 
 def _serialize_dates(d):
-    """Convert datetime/date to ISO string for JSON."""
-    for k, v in d.items():
+    """Convert datetime/date to ISO string for JSON (handles nested dicts/lists)."""
+    if d is None:
+        return d
+    for k, v in list(d.items()):
         if isinstance(v, datetime):
             d[k] = v.isoformat()
         elif isinstance(v, date) and not isinstance(v, datetime):
             d[k] = v.isoformat()
+        elif isinstance(v, dict):
+            _serialize_dates(v)
+        elif isinstance(v, list):
+            for i, item in enumerate(v):
+                if isinstance(item, (datetime, date)):
+                    v[i] = item.isoformat()
+                elif isinstance(item, dict):
+                    _serialize_dates(item)
     return d
 
 

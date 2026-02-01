@@ -16,30 +16,24 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (token && user) {
-      setLoading(false);
-      return;
-    }
     if (!token) {
-      api
-        .post("/auth/demo")
-        .then((res) => {
-          const { access_token, user: u } = res.data;
-          localStorage.setItem("token", access_token);
-          localStorage.setItem("user", JSON.stringify(u));
-          setUser(u);
-        })
-        .catch(() => {
-          setUser(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+      setUser(null);
     }
+    setLoading(false);
   }, []);
 
   const login = (email, password) => {
     return api.post("/auth/login", { email, password }).then((res) => {
+      const { access_token, user: u } = res.data;
+      localStorage.setItem("token", access_token);
+      localStorage.setItem("user", JSON.stringify(u));
+      setUser(u);
+      return u;
+    });
+  };
+
+  const demoLogin = () => {
+    return api.post("/auth/demo").then((res) => {
       const { access_token, user: u } = res.data;
       localStorage.setItem("token", access_token);
       localStorage.setItem("user", JSON.stringify(u));
@@ -55,7 +49,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, demoLogin, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

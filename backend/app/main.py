@@ -14,22 +14,49 @@ if _backend_root not in sys.path:
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+def _sanitize_for_json(obj):
+    """Recursively convert date/datetime/ObjectId to JSON-serializable types."""
+    if obj is None:
+        return None
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    try:
+        from bson import ObjectId
+        if isinstance(obj, ObjectId):
+            return str(obj)
+    except ImportError:
+        pass
+    return obj
+
 try:
     from flask.json.provider import DefaultJSONProvider
+    from bson import ObjectId
 
     class CustomJSONProvider(DefaultJSONProvider):
-        """JSON provider that handles datetime.date and datetime.datetime."""
+        """JSON provider: sanitize payload then serialize so date/datetime never reach encoder."""
         def default(self, o):
             if isinstance(o, datetime):
                 return o.isoformat()
             if isinstance(o, date):
                 return o.isoformat()
+            if isinstance(o, ObjectId):
+                return str(o)
             return super().default(o)
+
+        def dumps(self, obj, **kwargs):
+            return super().dumps(_sanitize_for_json(obj), **kwargs)
 
     def _install_json_provider(app):
         app.json = CustomJSONProvider(app)
 except ImportError:
     import json
+    from bson import ObjectId
 
     class CustomJSONEncoder(json.JSONEncoder):
         def default(self, o):
@@ -37,6 +64,8 @@ except ImportError:
                 return o.isoformat()
             if isinstance(o, date):
                 return o.isoformat()
+            if isinstance(o, ObjectId):
+                return str(o)
             return super().default(o)
 
     def _install_json_provider(app):
@@ -58,6 +87,25 @@ def create_app():
     """Application factory pattern - uses MongoDB (online)."""
     app = Flask(__name__)
     _install_json_provider(app)
+
+    # Force every JSON response through sanitizer so date/datetime never reach the encoder
+    _orig_dumps = app.json.dumps
+    def _safe_dumps(obj, **kwargs):
+        return _orig_dumps(_sanitize_for_json(obj), **kwargs)
+    app.json.dumps = _safe_dumps
+
+    # Also patch global jsonify so every jsonify() call (from any blueprint) sanitizes first
+    import flask.json as _flask_json
+    _orig_jsonify = _flask_json.jsonify
+    def _safe_jsonify(*args, **kwargs):
+        if not args and not kwargs:
+            return _orig_jsonify(*args, **kwargs)
+        from flask import current_app
+        obj = current_app.json._prepare_response_obj(args, kwargs)
+        if obj is not None:
+            return _orig_jsonify(_sanitize_for_json(obj))
+        return _orig_jsonify(*args, **kwargs)
+    _flask_json.jsonify = _safe_jsonify
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-me')

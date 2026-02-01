@@ -12,7 +12,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401/422 (invalid or expired token), clear session and reload so demo login runs again
+// On 401/422 (invalid or expired token), clear session and reload so user is sent to login page
 api.interceptors.response.use(
   (res) => res,
   (err) => {

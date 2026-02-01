@@ -1,6 +1,8 @@
 import { useContext } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+import Login from "./pages/Login.jsx";
+import SignUp from "./pages/SignUp.jsx";
 import Dashboard from "./pages/admin/Dashboard.jsx";
 import BudgetManagement from "./pages/admin/BudgetManagement.jsx";
 import TransactionManagement from "./pages/admin/TransactionManagement.jsx";
@@ -14,12 +16,21 @@ import Sidebar from "./components/common/Sidebar.jsx";
 import { AuthContext } from "./context/AuthContext";
 
 function AppContent() {
-  const { loading } = useContext(AuthContext);
+  const { user, loading } = useContext(AuthContext);
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-        <div>Loading...</div>
+      <div className="flex justify-center items-center min-h-screen bg-[#FDFCFB]">
+        <div className="text-slate-600 font-medium">Loading...</div>
       </div>
+    );
+  }
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
     );
   }
   return (
@@ -36,6 +47,7 @@ function AppContent() {
             <Route path="/customer" element={<CustomerDashboard />} />
             <Route path="/customer/invoices" element={<MyInvoices />} />
             <Route path="/customer/payment" element={<PaymentPage />} />
+            <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>

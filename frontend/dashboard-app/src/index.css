@@ -37,16 +37,33 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: #1e40af;
+  color: #ffffff;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: background-color 0.2s, border-color 0.25s;
 }
 button:hover {
-  border-color: #646cff;
+  background-color: #1d4ed8;
+  border-color: #3b82f6;
 }
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Ensure all button variants have readable text */
+button.btn-primary,
+button[type="submit"] {
+  background-color: #1e40af;
+  color: #ffffff;
+}
+button.btn-success {
+  background-color: #15803d;
+  color: #ffffff;
+}
+button.btn-secondary {
+  background-color: #475569;
+  color: #ffffff;
 }
 
 @media (prefers-color-scheme: light) {
@@ -58,6 +75,7 @@ button:focus-visible {
     color: #747bff;
   }
   button {
-    background-color: #f9f9f9;
+    background-color: #1e40af;
+    color: #ffffff;
   }
 }
