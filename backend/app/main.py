@@ -5,6 +5,7 @@ Set MONGO_URI and MONGO_DB_NAME in .env (e.g. MongoDB Atlas connection string).
 """
 import sys
 import os
+from datetime import date, datetime
 
 _backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _backend_root not in sys.path:
@@ -12,6 +13,34 @@ if _backend_root not in sys.path:
 
 from flask import Flask, jsonify
 from flask_cors import CORS
+
+try:
+    from flask.json.provider import DefaultJSONProvider
+
+    class CustomJSONProvider(DefaultJSONProvider):
+        """JSON provider that handles datetime.date and datetime.datetime."""
+        def default(self, o):
+            if isinstance(o, datetime):
+                return o.isoformat()
+            if isinstance(o, date):
+                return o.isoformat()
+            return super().default(o)
+
+    def _install_json_provider(app):
+        app.json = CustomJSONProvider(app)
+except ImportError:
+    import json
+
+    class CustomJSONEncoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, datetime):
+                return o.isoformat()
+            if isinstance(o, date):
+                return o.isoformat()
+            return super().default(o)
+
+    def _install_json_provider(app):
+        app.json_encoder = CustomJSONEncoder
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 
@@ -28,6 +57,7 @@ from app.database.connection import init_mongodb
 def create_app():
     """Application factory pattern - uses MongoDB (online)."""
     app = Flask(__name__)
+    _install_json_provider(app)
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-me')
