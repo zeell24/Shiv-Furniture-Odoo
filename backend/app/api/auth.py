@@ -1,134 +1,110 @@
 # backend/app/api/auth.py
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from app.database.connection import db
-from app.database.models import User
-from datetime import timedelta
+from app.database.connection import get_db
+from app.database.models import user_to_dict, user_check_password, user_set_password, oid
+from datetime import timedelta, datetime
 
 auth_bp = Blueprint('auth', __name__)
 
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Register a new user"""
     try:
         data = request.get_json()
-        
-        # Validate input
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
-        
-        # Check if user exists
-        existing_user = User.query.filter_by(email=data['email']).first()
-        if existing_user:
+
+        db = get_db()
+        if db.users.find_one({'email': data['email']}):
             return jsonify({'error': 'User already exists'}), 400
-        
-        # Create new user
-        new_user = User(
-            email=data['email'],
-            role=data.get('role', 'customer')  # Default to customer
-        )
-        new_user.set_password(data['password'])
-        
-        db.session.add(new_user)
-        db.session.commit()
-        
+
+        doc = {
+            'email': data['email'],
+            'role': data.get('role', 'customer'),
+            'password_hash': user_set_password(data['password']),
+            'created_at': datetime.utcnow()
+        }
+        r = db.users.insert_one(doc)
+        doc['_id'] = r.inserted_id
         return jsonify({
             'message': 'User registered successfully',
-            'user': {
-                'id': new_user.id,
-                'email': new_user.email,
-                'role': new_user.role
-            }
+            'user': {'id': str(r.inserted_id), 'email': doc['email'], 'role': doc['role']}
         }), 201
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @auth_bp.route('/login', methods=['POST'])
 def login():
-    """Login user and return JWT token"""
     try:
         data = request.get_json()
-        
-        # Validate input
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
-        
-        # Find user
-        user = User.query.filter_by(email=data['email']).first()
-        
-        if not user or not user.check_password(data['password']):
+
+        db = get_db()
+        user = db.users.find_one({'email': data['email']})
+        if not user or not user_check_password(user.get('password_hash'), data['password']):
             return jsonify({'error': 'Invalid credentials'}), 401
-        
-        # Create access token
-        access_token = create_access_token(
-            identity={'id': user.id, 'email': user.email, 'role': user.role},
-            expires_delta=timedelta(hours=24)
-        )
-        
+
+        identity = {'id': str(user['_id']), 'email': user['email'], 'role': user['role']}
+        access_token = create_access_token(identity=identity, expires_delta=timedelta(hours=24))
         return jsonify({
             'message': 'Login successful',
             'access_token': access_token,
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'role': user.role
-            }
+            'user': {'id': identity['id'], 'email': user['email'], 'role': user['role']}
         }), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    """Get current user info"""
     try:
         current_user = get_jwt_identity()
-        user = User.query.get(current_user['id'])
-        
+        db = get_db()
+        user = db.users.find_one({'_id': oid(current_user['id'])})
         if not user:
             return jsonify({'error': 'User not found'}), 404
-        
-        return jsonify({
-            'id': user.id,
-            'email': user.email,
-            'role': user.role,
-            'created_at': user.created_at.isoformat() if user.created_at else None
-        }), 200
-        
+        return jsonify(user_to_dict(user)), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """Logout user (client should discard token)"""
     return jsonify({'message': 'Logout successful'}), 200
 
 
 @auth_bp.route('/demo', methods=['POST'])
 def demo_login():
-    """Demo login - creates admin user if not exists, returns JWT for quick dev access"""
     try:
-        admin = User.query.filter_by(email='admin@shivfurniture.com').first()
+        db = get_db()
+        admin = db.users.find_one({'email': 'admin@shivfurniture.com'})
         if not admin:
-            admin = User(email='admin@shivfurniture.com', role='admin')
-            admin.set_password('admin123')
-            db.session.add(admin)
-            db.session.commit()
-        if not admin.check_password('admin123'):
-            admin.set_password('admin123')
-            db.session.commit()
-        token = create_access_token(
-            identity={'id': admin.id, 'email': admin.email, 'role': admin.role},
-            expires_delta=timedelta(hours=24)
-        )
+            db.users.insert_one({
+                'email': 'admin@shivfurniture.com',
+                'role': 'admin',
+                'password_hash': user_set_password('admin123'),
+                'created_at': datetime.utcnow()
+            })
+            admin = db.users.find_one({'email': 'admin@shivfurniture.com'})
+        else:
+            db.users.update_one(
+                {'_id': admin['_id']},
+                {'$set': {'password_hash': user_set_password('admin123')}}
+            )
+            admin = db.users.find_one({'email': 'admin@shivfurniture.com'})
+        if not admin or not user_check_password(admin.get('password_hash'), 'admin123'):
+            return jsonify({'error': 'Demo user setup failed'}), 500
+        identity = {'id': str(admin['_id']), 'email': admin['email'], 'role': admin['role']}
+        token = create_access_token(identity=identity, expires_delta=timedelta(hours=24))
         return jsonify({
             'message': 'Demo login successful',
             'access_token': token,
-            'user': {'id': admin.id, 'email': admin.email, 'role': admin.role}
+            'user': {'id': identity['id'], 'email': admin['email'], 'role': admin['role']}
         }), 200
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500

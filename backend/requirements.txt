@@ -1,0 +1,8 @@
+# Python 3.7+ compatible
+Flask>=2.0
+flask-cors>=3.0
+flask-jwt-extended>=4.0
+pymongo>=4.0,<4.10
+python-dotenv>=0.19.0
+werkzeug>=2.0
+stripe>=5.0

@@ -1,219 +1,198 @@
 # backend/app/api/transactions.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.database.connection import db
-from app.database.models import Transaction, CostCenter, Product
+from flask_jwt_extended import jwt_required
+from app.database.connection import get_db
+from app.database.models import transaction_to_dict, cost_center_to_dict, product_to_dict, oid
 from datetime import datetime
 
 transactions_bp = Blueprint('transactions', __name__)
 
+
+def _doc_date(doc, key):
+    v = doc.get(key)
+    if v is None:
+        return None
+    if hasattr(v, 'date'):
+        return v
+    if isinstance(v, str):
+        return datetime.strptime(v[:10], '%Y-%m-%d').date()
+    return v
+
+
 @transactions_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_transactions():
-    """Get all transactions with optional filters"""
     try:
-        # Get query parameters
-        transaction_type = request.args.get('type')  # 'purchase' or 'sale'
-        cost_center_id = request.args.get('cost_center_id')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
-        # Build query
-        query = Transaction.query
-        
-        if transaction_type:
-            query = query.filter(Transaction.type == transaction_type)
-        
-        if cost_center_id:
-            query = query.filter(Transaction.cost_center_id == cost_center_id)
-        
-        if start_date:
-            start = datetime.strptime(start_date, '%Y-%m-%d').date()
-            query = query.filter(Transaction.transaction_date >= start)
-        
-        if end_date:
-            end = datetime.strptime(end_date, '%Y-%m-%d').date()
-            query = query.filter(Transaction.transaction_date <= end)
-        
-        # Order by date (newest first)
-        transactions = query.order_by(Transaction.transaction_date.desc()).all()
-        
-        return jsonify([t.to_dict() for t in transactions]), 200
-        
+        db = get_db()
+        q = {}
+        if request.args.get('type'):
+            q['type'] = request.args.get('type')
+        if request.args.get('cost_center_id'):
+            q['cost_center_id'] = oid(request.args.get('cost_center_id'))
+        if request.args.get('start_date'):
+            q.setdefault('transaction_date', {})['$gte'] = datetime.strptime(request.args['start_date'], '%Y-%m-%d').date()
+        if request.args.get('end_date'):
+            q.setdefault('transaction_date', {})['$lte'] = datetime.strptime(request.args['end_date'], '%Y-%m-%d').date()
+
+        cursor = db.transactions.find(q).sort('transaction_date', -1)
+        out = []
+        for t in cursor:
+            cc = db.cost_centers.find_one({'_id': t.get('cost_center_id')})
+            pr = db.products.find_one({'_id': t.get('product_id')}) if t.get('product_id') else None
+            out.append(transaction_to_dict(t, cost_center_name=cc.get('name') if cc else None, product_name=pr.get('name') if pr else None))
+        return jsonify(out), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@transactions_bp.route('/<int:transaction_id>', methods=['GET'])
+
+@transactions_bp.route('/<id>', methods=['GET'])
 @jwt_required()
-def get_transaction(transaction_id):
-    """Get specific transaction"""
+def get_transaction(id):
     try:
-        transaction = Transaction.query.get_or_404(transaction_id)
-        return jsonify(transaction.to_dict()), 200
+        db = get_db()
+        t = db.transactions.find_one({'_id': oid(id)})
+        if not t:
+            return jsonify({'error': 'Transaction not found'}), 404
+        cc = db.cost_centers.find_one({'_id': t.get('cost_center_id')})
+        pr = db.products.find_one({'_id': t.get('product_id')}) if t.get('product_id') else None
+        return jsonify(transaction_to_dict(t, cost_center_name=cc.get('name') if cc else None, product_name=pr.get('name') if pr else None)), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @transactions_bp.route('/', methods=['POST'])
 @jwt_required()
 def create_transaction():
-    """Create a new transaction"""
     try:
         data = request.get_json()
-        
-        # Validate required fields
-        required_fields = ['type', 'amount', 'cost_center_id', 'transaction_date']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'error': f'{field} is required'}), 400
-        
-        # Validate transaction type
-        if data['type'] not in ['purchase', 'sale']:
+        required = ['type', 'amount', 'cost_center_id', 'transaction_date']
+        for f in required:
+            if f not in data:
+                return jsonify({'error': f'{f} is required'}), 400
+        if data['type'] not in ('purchase', 'sale'):
             return jsonify({'error': "type must be 'purchase' or 'sale'"}), 400
-        
-        # Check if cost center exists
-        cost_center = CostCenter.query.get(data['cost_center_id'])
-        if not cost_center:
+
+        db = get_db()
+        cc_id = oid(data['cost_center_id'])
+        if not db.cost_centers.find_one({'_id': cc_id}):
             return jsonify({'error': 'Cost center not found'}), 404
-        
-        # Check if product exists (if provided)
-        if data.get('product_id'):
-            product = Product.query.get(data['product_id'])
-            if not product:
-                return jsonify({'error': 'Product not found'}), 404
-        
-        # Parse date
-        transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-        
-        # Normalize status
+        product_id = oid(data.get('product_id')) if data.get('product_id') else None
+        if product_id and not db.products.find_one({'_id': product_id}):
+            return jsonify({'error': 'Product not found'}), 404
+
+        txn_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
         status = data.get('status', 'paid')
         if status not in ('paid', 'not_paid', 'partially_paid'):
             status = 'paid'
 
-        # Create transaction
-        new_transaction = Transaction(
-            type=data['type'],
-            amount=data['amount'],
-            cost_center_id=data['cost_center_id'],
-            product_id=data.get('product_id'),
-            quantity=data.get('quantity', 1),
-            description=data.get('description', ''),
-            transaction_date=transaction_date,
-            status=status
-        )
-        
-        db.session.add(new_transaction)
-        db.session.commit()
-        
+        doc = {
+            'type': data['type'],
+            'amount': float(data['amount']),
+            'status': status,
+            'cost_center_id': cc_id,
+            'product_id': product_id,
+            'quantity': data.get('quantity', 1),
+            'description': data.get('description', ''),
+            'transaction_date': txn_date,
+            'created_at': datetime.utcnow()
+        }
+        r = db.transactions.insert_one(doc)
+        doc['_id'] = r.inserted_id
+        cc = db.cost_centers.find_one({'_id': cc_id})
+        pr = db.products.find_one({'_id': product_id}) if product_id else None
         return jsonify({
             'message': 'Transaction created successfully',
-            'transaction': new_transaction.to_dict()
+            'transaction': transaction_to_dict(doc, cost_center_name=cc.get('name') if cc else None, product_name=pr.get('name') if pr else None)
         }), 201
-        
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@transactions_bp.route('/<int:transaction_id>', methods=['PUT'])
+
+@transactions_bp.route('/<id>', methods=['PUT'])
 @jwt_required()
-def update_transaction(transaction_id):
-    """Update a transaction"""
+def update_transaction(id):
     try:
-        transaction = Transaction.query.get_or_404(transaction_id)
+        db = get_db()
+        t = db.transactions.find_one({'_id': oid(id)})
+        if not t:
+            return jsonify({'error': 'Transaction not found'}), 404
+
         data = request.get_json()
-        
-        # Update fields if provided
+        updates = {}
         if 'type' in data:
-            if data['type'] not in ['purchase', 'sale']:
+            if data['type'] not in ('purchase', 'sale'):
                 return jsonify({'error': "type must be 'purchase' or 'sale'"}), 400
-            transaction.type = data['type']
-        
+            updates['type'] = data['type']
         if 'amount' in data:
-            transaction.amount = data['amount']
-        
+            updates['amount'] = data['amount']
         if 'cost_center_id' in data:
-            # Verify cost center exists
-            cost_center = CostCenter.query.get(data['cost_center_id'])
-            if not cost_center:
+            cc_id = oid(data['cost_center_id'])
+            if not db.cost_centers.find_one({'_id': cc_id}):
                 return jsonify({'error': 'Cost center not found'}), 404
-            transaction.cost_center_id = data['cost_center_id']
-        
+            updates['cost_center_id'] = cc_id
         if 'product_id' in data:
-            if data['product_id']:
-                product = Product.query.get(data['product_id'])
-                if not product:
-                    return jsonify({'error': 'Product not found'}), 404
-            transaction.product_id = data['product_id']
-        
+            pid = oid(data['product_id']) if data['product_id'] else None
+            if pid and not db.products.find_one({'_id': pid}):
+                return jsonify({'error': 'Product not found'}), 404
+            updates['product_id'] = pid
         if 'quantity' in data:
-            transaction.quantity = data['quantity']
-        
+            updates['quantity'] = data['quantity']
         if 'description' in data:
-            transaction.description = data['description']
-        
+            updates['description'] = data['description']
         if 'transaction_date' in data:
-            transaction.transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-        
+            updates['transaction_date'] = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
         if 'status' in data and data['status'] in ('paid', 'not_paid', 'partially_paid'):
-            transaction.status = data['status']
-        
-        db.session.commit()
-        
+            updates['status'] = data['status']
+        if updates:
+            db.transactions.update_one({'_id': oid(id)}, {'$set': updates})
+        t = db.transactions.find_one({'_id': oid(id)})
+        cc = db.cost_centers.find_one({'_id': t.get('cost_center_id')})
+        pr = db.products.find_one({'_id': t.get('product_id')}) if t.get('product_id') else None
         return jsonify({
             'message': 'Transaction updated successfully',
-            'transaction': transaction.to_dict()
+            'transaction': transaction_to_dict(t, cost_center_name=cc.get('name') if cc else None, product_name=pr.get('name') if pr else None)
         }), 200
-        
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@transactions_bp.route('/<int:transaction_id>', methods=['DELETE'])
+
+@transactions_bp.route('/<id>', methods=['DELETE'])
 @jwt_required()
-def delete_transaction(transaction_id):
-    """Delete a transaction"""
+def delete_transaction(id):
     try:
-        transaction = Transaction.query.get_or_404(transaction_id)
-        
-        db.session.delete(transaction)
-        db.session.commit()
-        
+        db = get_db()
+        r = db.transactions.delete_one({'_id': oid(id)})
+        if r.deleted_count == 0:
+            return jsonify({'error': 'Transaction not found'}), 404
         return jsonify({'message': 'Transaction deleted successfully'}), 200
-        
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
 
 @transactions_bp.route('/summary', methods=['GET'])
 @jwt_required()
 def get_transaction_summary():
-    """Get transaction summary for dashboard"""
     try:
-        # Total transactions count
-        total_transactions = Transaction.query.count()
-        
-        # Total purchase amount
-        total_purchase = db.session.query(db.func.sum(Transaction.amount))\
-            .filter(Transaction.type == 'purchase')\
-            .scalar() or 0
-        
-        # Total sales amount
-        total_sales = db.session.query(db.func.sum(Transaction.amount))\
-            .filter(Transaction.type == 'sale')\
-            .scalar() or 0
-        
-        # Recent transactions (last 10)
-        recent_transactions = Transaction.query\
-            .order_by(Transaction.transaction_date.desc())\
-            .limit(10)\
-            .all()
-        
+        db = get_db()
+        pipeline = [
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'purchase': {'$sum': {'$cond': [{'$eq': ['$type', 'purchase']}, '$amount', 0]}}, 'sale': {'$sum': {'$cond': [{'$eq': ['$type', 'sale']}, '$amount', 0]}}}}
+        ]
+        agg = list(db.transactions.aggregate(pipeline))
+        total_purchase = agg[0]['purchase'] if agg else 0
+        total_sales = agg[0]['sale'] if agg else 0
+        total_transactions = db.transactions.count_documents({})
+        recent = list(db.transactions.find({}).sort('transaction_date', -1).limit(10))
+        out = []
+        for t in recent:
+            cc = db.cost_centers.find_one({'_id': t.get('cost_center_id')})
+            pr = db.products.find_one({'_id': t.get('product_id')}) if t.get('product_id') else None
+            out.append(transaction_to_dict(t, cost_center_name=cc.get('name') if cc else None, product_name=pr.get('name') if pr else None))
         return jsonify({
             'total_transactions': total_transactions,
             'total_purchase': total_purchase,
             'total_sales': total_sales,
             'net_flow': total_sales - total_purchase,
-            'recent_transactions': [t.to_dict() for t in recent_transactions]
+            'recent_transactions': out
         }), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500

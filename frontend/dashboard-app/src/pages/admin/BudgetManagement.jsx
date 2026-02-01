@@ -50,7 +50,7 @@ export default function BudgetManagement() {
     }
     try {
       await createBudget({
-        cost_center_id: Number(form.cost_center_id),
+        cost_center_id: form.cost_center_id,
         amount: Number(form.amount),
         period_start: form.period_start,
         period_end: form.period_end,

@@ -19,11 +19,19 @@ pip install -r requirements.txt
 python -m flask --app app.main:create_app run --port 5000
 ```
 
+### Database (MongoDB – online)
+- Backend uses **MongoDB** (e.g. MongoDB Atlas). You must set this in `.env` (in project root or in `backend/`):
+  - `MONGO_URI` – connection string (e.g. `mongodb+srv://user:pass@cluster.mongodb.net/`)
+  - `MONGO_DB_NAME` – database name (e.g. `shiv_furniture_db`)
+- **"Connection refused" / "Could not connect to MongoDB"** means no MongoDB is running on localhost and `MONGO_URI` is not set. Create a `.env` file (copy from `.env.example`) and set `MONGO_URI` to your [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) connection string.
+
 ### Seed Database (Creates cost centers, admin user, master budget)
+Run after first start so APIs return data:
 ```bash
 cd backend
 python scripts/seed_sqlite.py
 ```
+Or from project root: `python backend/scripts/seed_sqlite.py`
 
 **Demo Login:** `admin@shivfurniture.com` / `admin123`
 
