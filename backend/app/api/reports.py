@@ -1,8 +1,9 @@
 # backend/app/api/reports.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.database.connection import get_db
 from app.database.models import transaction_to_dict, budget_to_dict, invoice_to_dict, oid
+from app.utils.json_response import json_response
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -27,10 +28,10 @@ def chart_data():
         db = get_db()
         transactions = list(db.transactions.find({}).sort('transaction_date', 1))
         if not transactions:
-            return jsonify({
+            return json_response({
                 'labels': [], 'datasets': [], 'has_data': False,
                 'message': 'No transaction data yet. Add transactions to see the chart.'
-            }), 200
+            }, 200)
         by_month = defaultdict(lambda: {'purchase': 0, 'sale': 0, 'total': 0})
         months_seen = set()
         for t in transactions:
@@ -40,7 +41,7 @@ def chart_data():
             by_month[month_key][t.get('type', '')] += t.get('amount', 0)
             by_month[month_key]['total'] += t.get('amount', 0)
         labels = sorted(months_seen)
-        return jsonify({
+        return json_response({
             'labels': labels,
             'datasets': [
                 {'label': 'Purchases', 'data': [by_month[m]['purchase'] for m in labels], 'backgroundColor': '#ef4444'},
@@ -49,9 +50,9 @@ def chart_data():
             ],
             'has_data': True,
             'transactions': [transaction_to_dict(t) for t in transactions]
-        }), 200
+        }, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @reports_bp.route('/budget-vs-actual', methods=['GET'])
@@ -90,7 +91,7 @@ def budget_vs_actual_report():
             total_actual += actual_spent
         total_variance = total_budget - total_actual
         total_utilization = (total_actual / total_budget * 100) if total_budget > 0 else 0
-        return jsonify({
+        return json_response({
             'summary': {
                 'total_budget': total_budget,
                 'total_actual': total_actual,
@@ -99,9 +100,9 @@ def budget_vs_actual_report():
             },
             'details': report_data,
             'timestamp': datetime.utcnow().isoformat()
-        }), 200
+        }, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @reports_bp.route('/financial-summary', methods=['GET'])
@@ -110,7 +111,7 @@ def financial_summary():
     try:
         current_user = get_jwt_identity()
         if current_user['role'] != 'admin':
-            return jsonify({'error': 'Admin access required'}), 403
+            return json_response({'error': 'Admin access required'}, 403)
 
         db = get_db()
         end_date = datetime.now().date()
@@ -146,7 +147,7 @@ def financial_summary():
         })
         payment_count = db.payments.count_documents({'payment_date': {'$gte': start_dt, '$lte': end_dt}})
 
-        return jsonify({
+        return json_response({
             'period': {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()},
             'summary': {
                 'total_sales': total_sales,
@@ -163,9 +164,9 @@ def financial_summary():
                 'payment_rate': round((paid_invoices / invoice_count * 100) if invoice_count > 0 else 0, 2)
             },
             'timestamp': datetime.utcnow().isoformat()
-        }), 200
+        }, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @reports_bp.route('/cost-center-performance', methods=['GET'])
@@ -174,7 +175,7 @@ def cost_center_performance():
     try:
         current_user = get_jwt_identity()
         if current_user['role'] != 'admin':
-            return jsonify({'error': 'Admin access required'}), 403
+            return json_response({'error': 'Admin access required'}, 403)
 
         db = get_db()
         cost_centers = list(db.cost_centers.find({}))
@@ -202,12 +203,12 @@ def cost_center_performance():
                 'remaining_budget': remaining,
                 'is_over_budget': total_spent > amt
             })
-        return jsonify({
+        return json_response({
             'cost_centers': performance_data,
             'timestamp': datetime.utcnow().isoformat()
-        }), 200
+        }, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @reports_bp.route('/dashboard-stats', methods=['GET'])
@@ -264,7 +265,7 @@ def dashboard_stats():
                     'remaining': amt - actual_spent
                 })
 
-        return jsonify({
+        return json_response({
             'summary': {
                 'total_budgets': total_budgets,
                 'total_transactions': total_transactions,
@@ -276,6 +277,6 @@ def dashboard_stats():
             'alerts': {'budget_alerts': alert_budgets, 'alert_count': len(alert_budgets)},
             'recent_unpaid_invoices': recent_out,
             'timestamp': datetime.utcnow().isoformat()
-        }), 200
+        }, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)

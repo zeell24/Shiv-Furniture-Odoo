@@ -1,8 +1,9 @@
 # backend/app/api/budget.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required
 from app.database.connection import get_db
 from app.database.models import budget_to_dict, transaction_to_dict, master_budget_to_dict, cost_center_to_dict, oid
+from app.utils.json_response import json_response
 from datetime import datetime, date
 
 budget_bp = Blueprint('budget', __name__)
@@ -58,12 +59,13 @@ def get_master_budget():
         if not mb:
             db.master_budget.insert_one({'amount': 1500000, 'updated_at': datetime.utcnow()})
             mb = db.master_budget.find_one({})
-        return jsonify({
+        payload = {
             'amount': mb['amount'],
             'updated_at': mb.get('updated_at').isoformat() if mb.get('updated_at') else None
-        }), 200
+        }
+        return json_response(payload, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/master', methods=['PUT'])
@@ -72,10 +74,10 @@ def update_master_budget():
     try:
         data = request.get_json()
         if 'amount' not in data:
-            return jsonify({'error': 'amount is required'}), 400
+            return json_response({'error': 'amount is required'}, 400)
         amount = float(data['amount'])
         if amount < 0:
-            return jsonify({'error': 'amount must be positive'}), 400
+            return json_response({'error': 'amount must be positive'}, 400)
 
         db = get_db()
         mb = db.master_budget.find_one({})
@@ -84,9 +86,9 @@ def update_master_budget():
         else:
             db.master_budget.update_one({}, {'$set': {'amount': amount, 'updated_at': datetime.utcnow()}})
         mb = db.master_budget.find_one({})
-        return jsonify({'message': 'Master budget updated', 'amount': mb['amount']}), 200
+        return json_response({'message': 'Master budget updated', 'amount': mb['amount']}, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/', methods=['GET'])
@@ -102,9 +104,9 @@ def get_budgets():
             d = budget_to_dict(b, cost_center_name=name)
             d.update(calculate_budget_utilization(db, b))
             result.append(d)
-        return jsonify(result), 200
+        return json_response(result, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/<id>', methods=['GET'])
@@ -114,7 +116,7 @@ def get_budget(id):
         db = get_db()
         budget = db.budgets.find_one({'_id': oid(id)})
         if not budget:
-            return jsonify({'error': 'Budget not found'}), 404
+            return json_response({'error': 'Budget not found'}, 404)
         cc = db.cost_centers.find_one({'_id': budget.get('cost_center_id')})
         name = cc.get('name') if cc else None
         d = budget_to_dict(budget, cost_center_name=name)
@@ -127,9 +129,9 @@ def get_budget(id):
             'transaction_date': {'$gte': ps, '$lte': pe}
         }))
         d['transactions'] = [transaction_to_dict(t, cost_center_name=name) for t in txns]
-        return jsonify(d), 200
+        return json_response(d, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/', methods=['POST'])
@@ -140,12 +142,12 @@ def create_budget():
         required = ['cost_center_id', 'amount', 'period_start', 'period_end']
         for f in required:
             if f not in data:
-                return jsonify({'error': f'{f} is required'}), 400
+                return json_response({'error': f'{f} is required'}, 400)
 
         db = get_db()
         cc_id = oid(data['cost_center_id'])
         if not db.cost_centers.find_one({'_id': cc_id}):
-            return jsonify({'error': 'Cost center not found'}), 404
+            return json_response({'error': 'Cost center not found'}, 404)
 
         period_start = _date_parse(data['period_start'])
         period_end = _date_parse(data['period_end'])
@@ -162,9 +164,10 @@ def create_budget():
         cc = db.cost_centers.find_one({'_id': cc_id})
         d = budget_to_dict(doc, cost_center_name=cc.get('name') if cc else None)
         d.update(calculate_budget_utilization(db, doc))
-        return jsonify({'message': 'Budget created successfully', 'budget': d}), 201
+        payload = {'message': 'Budget created successfully', 'budget': d}
+        return json_response(payload, 201)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/<id>', methods=['PUT'])
@@ -174,7 +177,7 @@ def update_budget(id):
         db = get_db()
         budget = db.budgets.find_one({'_id': oid(id)})
         if not budget:
-            return jsonify({'error': 'Budget not found'}), 404
+            return json_response({'error': 'Budget not found'}, 404)
 
         data = request.get_json()
         updates = {'updated_at': datetime.utcnow()}
@@ -189,9 +192,10 @@ def update_budget(id):
         cc = db.cost_centers.find_one({'_id': budget.get('cost_center_id')})
         d = budget_to_dict(budget, cost_center_name=cc.get('name') if cc else None)
         d.update(calculate_budget_utilization(db, budget))
-        return jsonify({'message': 'Budget updated successfully', 'budget': d}), 200
+        payload = {'message': 'Budget updated successfully', 'budget': d}
+        return json_response(payload, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/<id>', methods=['DELETE'])
@@ -201,10 +205,10 @@ def delete_budget(id):
         db = get_db()
         r = db.budgets.delete_one({'_id': oid(id)})
         if r.deleted_count == 0:
-            return jsonify({'error': 'Budget not found'}), 404
-        return jsonify({'message': 'Budget deleted successfully'}), 200
+            return json_response({'error': 'Budget not found'}, 404)
+        return json_response({'message': 'Budget deleted successfully'}, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)
 
 
 @budget_bp.route('/summary', methods=['GET'])
@@ -222,13 +226,14 @@ def get_budget_summary():
             if u['is_over_budget']:
                 over_budget_count += 1
         overall = (total_spent / total_budget * 100) if total_budget > 0 else 0
-        return jsonify({
+        payload = {
             'total_budget': total_budget,
             'total_spent': total_spent,
             'overall_utilization_percentage': round(overall, 2),
             'remaining_balance': total_budget - total_spent,
             'budget_count': len(budgets),
             'over_budget_count': over_budget_count
-        }), 200
+        }
+        return json_response(payload, 200)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return json_response({'error': str(e)}, 500)

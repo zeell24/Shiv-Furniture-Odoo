@@ -136,3 +136,20 @@ def oid(s):
         return ObjectId(s)
     except Exception:
         return None
+
+
+def sanitize_for_json(obj):
+    """Return a JSON-serializable copy: date/datetime -> ISO string, ObjectId -> str. Use before jsonify."""
+    if obj is None:
+        return None
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date) and not isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(v) for v in obj]
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    return obj
